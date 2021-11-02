@@ -3,42 +3,18 @@ package tools;
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 
 public class Readpcap {
+    static final String UNKNOWN_CHARACTER = ".";
+    static boolean flagGHdr;
+    static boolean flagHdr;
 
-    public Readpcap(){
-        
-    }
-
-    public void readfile(String path) {
-        try {
-
-            BufferedReader bufferedReader = new BufferedReader(new FileReader(path));
-
-            String curLine;
-            while ((curLine = bufferedReader.readLine()) != null) {
-                // process the line as required
-                System.out.println(curLine);
-            }
-            bufferedReader.close();
-        } catch (Exception e) {
-            System.out.println("An error occured");
-        }
-    }
-
-    private static final String UNKNOWN_CHARACTER = ".";
+    static List<Object> pktList = new ArrayList<>();
 
 
-    public static void main(String[] args) throws IOException {
-
-        String file = "/path/to/text.txt";
-
-        String s = convertFileToHex(Paths.get(file));
-        System.out.println(s);
-    }
-
-    public static String convertFileToHex(Path path) throws IOException {
+    public static String convertFileToHex(Path path) throws IOException, NumberFormatException {
 
         if (Files.notExists(path)) {
             throw new IllegalArgumentException("File not found! " + path);
@@ -49,13 +25,99 @@ public class Readpcap {
         StringBuilder input = new StringBuilder();
         
         StringBuilder raw = new StringBuilder();
+        StringBuilder tmp = new StringBuilder();
+
+        String hdr = tmp.toString().replace(" ", "");
+        String header = tmp.reverse().toString().replace(" ", "");
+
         int count = 0;
         int value;
-
+        int n= 0;
+        int m=0 ;
+        boolean isinv= true;
+        int pktLenght=0 ;
+        
         // path to inputstream....
         try (InputStream inputStream = Files.newInputStream(path)) {
-
             while ((value = inputStream.read()) != -1) {
+
+                tmp.append(String.format("%02X ", value));
+                if(n == 23){ // < >
+                    hdr = tmp.toString().replace(" ", "");
+                    header = tmp.reverse().toString().replace(" ", "");
+                    if(hdr.substring(0,2).equals("D4")){  // swapped
+                        System.out.println(Integer.parseInt(readNBytes(inv2(header), 4, 8),16));
+                        pktList.add(new GlobalHeader(readNBytes(inv2(header), 4, 40),
+                                                   Integer.parseInt(readNBytes(inv2(header), 2, 36),16),
+                                                   Integer.parseInt(readNBytes(inv2(header), 2, 32),16),
+                                                   Integer.parseInt(readNBytes(inv2(header), 4, 24),16),
+                                                   Integer.parseInt(readNBytes(inv2(header), 4, 16),16),
+                                                   Integer.parseInt(readNBytes(inv2(header), 4, 8),16),
+                                                   Integer.parseInt(readNBytes(inv2(header), 4, 0),16)));
+                        
+                        isinv = true;
+                    }else{
+                        pktList.add(new GlobalHeader(readNBytes(inv2(hdr), 4, 0),
+                                                   Integer.parseInt(readNBytes(inv2(hdr), 2, 8),16),
+                                                   Integer.parseInt(readNBytes(inv2(hdr), 2, 12),16),
+                                                   Integer.parseInt(readNBytes(inv2(hdr), 4, 16),16),
+                                                   Integer.parseInt(readNBytes(inv2(hdr), 4, 24),16),
+                                                   Integer.parseInt(readNBytes(inv2(hdr), 4, 32),16),
+                                                   Integer.parseInt(readNBytes(inv2(hdr), 4, 40),16)));
+                        isinv = false;
+                    }
+                    tmp.setLength(0);
+                    System.out.println(("Global header: \n"+pktList.get(0).toString()));
+
+                    
+                }
+                n++;
+
+
+                if(n == 16+24 && isinv){ // < >
+                    hdr = tmp.toString().replace(" ", "");
+                    header = tmp.reverse().toString().replace(" ", "");
+                    System.out.println(inv2(header));
+                    System.out.println(Integer.parseInt(readNBytes(inv2(header), 4, 0),16));
+                    System.out.println(Integer.parseInt(readNBytes(inv2(header), 4, 8),16));
+                    System.out.println(Integer.parseInt(readNBytes(inv2(header), 4, 16),16));
+                    System.out.println(Integer.parseInt(readNBytes(inv2(header), 4, 24),16));
+
+                    pktList.add(new Pkt(new PktHeader(Integer.parseInt(readNBytes(inv2(header), 4, 0),16),
+                                                Integer.parseInt(readNBytes(inv2(header), 4, 8),16),
+                                                Integer.parseInt(readNBytes(inv2(header), 4, 16),16),
+                                                Integer.parseInt(readNBytes(inv2(header), 4, 24),16))
+                                                ,
+                                                "dkljf")
+                                                );
+                    //m=0;
+                    tmp.setLength(0);
+                    System.out.println(("Global header: \n"+pktList.get(1).toString()));
+                }
+
+                if(n == 15+23 && !isinv){ // < >
+                    hdr = tmp.toString().replace(" ", "");
+                    header = tmp.reverse().toString().replace(" ", "");
+                    
+                    System.out.println(Integer.parseInt(readNBytes(inv2(hdr), 4, 24),16));
+
+                    pktList.add(new Pkt(new PktHeader(Integer.parseInt(readNBytes(inv2(hdr), 4, 0),16),
+                                                Integer.parseInt(readNBytes(inv2(hdr), 4, 8),16),
+                                                Integer.parseInt(readNBytes(inv2(hdr), 4, 16),16),
+                                                Integer.parseInt(readNBytes(inv2(hdr), 4, 24),16))
+                                                , 
+                                                
+                                                "dkljf")
+                                                );
+                    //m=0;
+                    tmp.setLength(0);
+                    System.out.println(("Global header: \n"+pktList.get(1).toString()));
+                }
+
+               // m++;
+                
+                ///// for writing raw dump files
+
 
                 hex.append(String.format("%02X ", value));
 
@@ -76,6 +138,8 @@ public class Readpcap {
                     count++;
                 }
 
+
+                
             }
 
             // if the count>0, meaning there is remaining content
@@ -92,6 +156,23 @@ public class Readpcap {
         }
 
         return result.toString();
+    }
+
+    public static String inv2(String s){
+        String result="";
+        for (int i=0; i< s.length()/2 ; i++){
+                result +=Character.toString(s.charAt(2*i+1)) + Character.toString(s.charAt(2*i));
+        }
+        return result;
+    }
+
+    public static String readNBytes(String s, int n, int index ){
+        String result="";
+        for (int i=index; i< index+n*2 ; i++){
+
+                result +=s.charAt(i);
+        }
+        return result;
     }
 
 }
